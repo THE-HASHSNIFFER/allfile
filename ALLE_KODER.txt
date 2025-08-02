@@ -1,0 +1,1989 @@
+# AFKBOT - ALLE KILDE FILER I ÉN FIL
+
+=== CLIENT/SRC/APP.TSX ===
+import { Switch, Route } from "wouter";
+import { queryClient } from "./lib/queryClient";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { Toaster } from "@/components/ui/toaster";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { useAuth } from "@/hooks/use-auth";
+import NotFound from "@/pages/not-found";
+import Login from "@/pages/login";
+import Dashboard from "@/pages/dashboard";
+import Subscribe from "@/pages/subscribe";
+import { useEffect } from "react";
+
+function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">
+        <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Login />;
+  }
+
+  if (user.plan === 'none') {
+    return <Subscribe />;
+  }
+
+  return <Component />;
+}
+
+function Router() {
+  return (
+    <Switch>
+      <Route path="/login" component={Login} />
+      <Route path="/subscribe" component={Subscribe} />
+      <Route path="/dashboard">
+        <ProtectedRoute component={Dashboard} />
+      </Route>
+      <Route path="/">
+        <ProtectedRoute component={Dashboard} />
+      </Route>
+      <Route component={NotFound} />
+    </Switch>
+  );
+}
+
+function App() {
+  useEffect(() => {
+    // Set dark theme by default
+    document.documentElement.classList.add('dark');
+  }, []);
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800">
+          <Toaster />
+          <Router />
+        </div>
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+}
+
+export default App;
+
+=== CLIENT/SRC/MAIN.TSX ===
+import { createRoot } from "react-dom/client";
+import App from "./App";
+import "./index.css";
+
+createRoot(document.getElementById("root")!).render(<App />);
+
+=== CLIENT/SRC/PAGES/DASHBOARD.TSX ===
+import { useQuery } from "@tanstack/react-query";
+import Header from "@/components/dashboard/header";
+import SessionTimer from "@/components/dashboard/session-timer";
+import BotStats from "@/components/dashboard/bot-stats";
+import AccountsPanel from "@/components/dashboard/accounts-panel";
+import NotificationsPanel from "@/components/dashboard/notifications-panel";
+import BotControls from "@/components/dashboard/bot-controls";
+import PricingPlans from "@/components/dashboard/pricing-plans";
+import { useWebSocket } from "@/hooks/use-websocket";
+import { useAuth } from "@/hooks/use-auth";
+
+export default function Dashboard() {
+  const { user } = useAuth();
+  
+  const { data: dashboardData, isLoading } = useQuery({
+    queryKey: ['/api/dashboard'],
+    refetchInterval: 30000, // Refetch every 30 seconds
+  });
+
+  // Initialize WebSocket connection
+  useWebSocket(user?.id);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800">
+      <Header user={dashboardData?.user} />
+      
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        {/* Dashboard Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
+          <div className="xl:col-span-1">
+            <SessionTimer sessions={dashboardData?.activeSessions || []} />
+          </div>
+          
+          <div className="xl:col-span-1">
+            <BotStats 
+              stats={dashboardData?.stats} 
+              accounts={dashboardData?.accounts || []} 
+            />
+          </div>
+          
+          <div className="xl:col-span-1">
+            <AccountsPanel 
+              accounts={dashboardData?.accounts || []} 
+              user={dashboardData?.user}
+            />
+          </div>
+          
+          <div className="xl:col-span-1">
+            <NotificationsPanel notifications={dashboardData?.notifications || []} />
+          </div>
+        </div>
+
+        <BotControls accounts={dashboardData?.accounts || []} />
+        
+        {dashboardData?.user?.plan === 'none' && (
+          <div className="mt-8">
+            <PricingPlans />
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+=== CLIENT/SRC/PAGES/LOGIN.TSX ===
+import { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
+import { useLocation } from "wouter";
+
+export default function Login() {
+  const [isLoading, setIsLoading] = useState(false);
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
+
+  const handleMicrosoftLogin = async () => {
+    setIsLoading(true);
+    try {
+      // In production, this would open Microsoft OAuth popup
+      // For demo purposes, we'll simulate the login
+      const response = await apiRequest("POST", "/api/auth/microsoft", {
+        email: "demo@example.com",
+        username: "Demo User",
+        microsoftId: `demo_${Date.now()}`,
+      });
+      
+      const data = await response.json();
+      
+      toast({
+        title: "Login Successful",
+        description: "Welcome to AFKBOT!",
+      });
+      
+      setLocation(data.redirectTo || "/dashboard");
+    } catch (error: any) {
+      toast({
+        title: "Login Failed",
+        description: error.message || "Failed to login with Microsoft",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800 px-4">
+      <Card className="w-full max-w-md glassmorphism border-slate-700">
+        <CardHeader className="text-center space-y-4">
+          <div className="flex items-center justify-center space-x-3">
+            <div className="w-12 h-12 bg-gradient-to-br from-primary to-purple-600 rounded-lg flex items-center justify-center">
+              <i className="fas fa-robot text-white text-2xl"></i>
+            </div>
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
+              AFKBOT
+            </h1>
+          </div>
+          <CardTitle className="text-2xl text-slate-200">
+            Welcome Back
+          </CardTitle>
+          <p className="text-slate-400">
+            Sign in to manage your Minecraft bots
+          </p>
+        </CardHeader>
+        
+        <CardContent className="space-y-6">
+          <Button
+            onClick={handleMicrosoftLogin}
+            disabled={isLoading}
+            className="w-full gradient-button h-12 text-lg font-medium"
+          >
+            {isLoading ? (
+              <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full mr-2" />
+            ) : (
+              <i className="fab fa-microsoft mr-2 text-xl"></i>
+            )}
+            Continue with Microsoft
+          </Button>
+          
+          <div className="text-center text-sm text-slate-400">
+            <p>New to AFKBOT? Sign up with Microsoft to get started.</p>
+          </div>
+          
+          <div className="border-t border-slate-700 pt-6">
+            <div className="grid grid-cols-3 gap-4 text-center text-sm text-slate-400">
+              <div>
+                <div className="text-2xl font-bold text-cyan-400">60+</div>
+                <div>Bot Commands</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-purple-400">24/7</div>
+                <div>Uptime</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-green-400">10</div>
+                <div>Max Accounts</div>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+=== CLIENT/SRC/PAGES/SUBSCRIBE.TSX ===
+import { useStripe, Elements, PaymentElement, useElements } from '@stripe/react-stripe-js';
+import { loadStripe } from '@stripe/stripe-js';
+import { useEffect, useState } from 'react';
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Check } from "lucide-react";
+
+// Check if Stripe key is available
+const stripePublicKey = import.meta.env.VITE_STRIPE_PUBLIC_KEY;
+const stripePromise = stripePublicKey ? loadStripe(stripePublicKey) : null;
+
+const plans = [
+  {
+    id: 'standard',
+    name: 'Standard',
+    price: 5,
+    accounts: 3,
+    features: ['3 Minecraft Accounts', 'Basic Bot Commands', '24/7 Support', 'Auto Mining'],
+    popular: false,
+  },
+  {
+    id: 'premium',
+    name: 'Premium',
+    price: 7,
+    accounts: 6,
+    features: ['6 Minecraft Accounts', 'Advanced Bot Commands', 'Priority Support', 'Auto Farming', 'Custom Scripts'],
+    popular: true,
+  },
+  {
+    id: 'supreme',
+    name: 'Supreme',
+    price: 11,
+    accounts: 10,
+    features: ['10 Minecraft Accounts', 'All Bot Commands', 'VIP Support', 'Auto Everything', 'API Access', 'Early Features'],
+    popular: false,
+  },
+];
+
+const SubscribeForm = ({ selectedPlan }: { selectedPlan: string }) => {
+  const stripe = useStripe();
+  const elements = useElements();
+  const { toast } = useToast();
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!stripe || !elements) return;
+    
+    setIsLoading(true);
+    
+    try {
+      const { error } = await stripe.confirmPayment({
+        elements,
+        confirmParams: {
+          return_url: `${window.location.origin}/dashboard`,
+        },
+      });
+
+      if (error) {
+        toast({
+          title: "Payment Failed",
+          description: error.message,
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: "Payment Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <PaymentElement />
+      <Button 
+        type="submit" 
+        disabled={!stripe || isLoading} 
+        className="w-full gradient-button h-12 text-lg font-medium"
+      >
+        {isLoading ? (
+          <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full mr-2" />
+        ) : null}
+        Subscribe to {plans.find(p => p.id === selectedPlan)?.name}
+      </Button>
+    </form>
+  );
+};
+
+function PlanSelection({ onSelectPlan }: { onSelectPlan: (plan: string) => void }) {
+  return (
+    <div className="space-y-8">
+      <div className="text-center space-y-4">
+        <h1 className="text-3xl font-bold text-slate-200">Choose Your Plan</h1>
+        <p className="text-slate-400">Upgrade to unlock more Minecraft accounts and advanced features</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {plans.map((plan) => (
+          <Card 
+            key={plan.id} 
+            className={`glassmorphism-light relative ${
+              plan.popular ? 'border-2 border-primary' : 'border-slate-600'
+            }`}
+          >
+            {plan.popular && (
+              <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
+                <Badge className="bg-gradient-to-r from-primary to-purple-600 text-white px-4 py-1">
+                  POPULAR
+                </Badge>
+              </div>
+            )}
+            
+            <CardHeader className="text-center space-y-4">
+              <CardTitle className="text-xl font-semibold text-slate-200">
+                {plan.name}
+              </CardTitle>
+              <div className="space-y-1">
+                <div className="text-3xl font-bold text-primary">${plan.price}</div>
+                <div className="text-slate-400 text-sm">per month</div>
+              </div>
+            </CardHeader>
+            
+            <CardContent className="space-y-6">
+              <ul className="space-y-3">
+                {plan.features.map((feature, index) => (
+                  <li key={index} className="flex items-center text-sm">
+                    <Check className="h-4 w-4 text-green-400 mr-3 flex-shrink-0" />
+                    <span className="text-slate-300">{feature}</span>
+                  </li>
+                ))}
+              </ul>
+              
+              <Button
+                onClick={() => onSelectPlan(plan.id)}
+                className={`w-full h-12 font-medium ${
+                  plan.popular 
+                    ? 'gradient-button' 
+                    : plan.id === 'supreme'
+                    ? 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600'
+                    : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600'
+                }`}
+              >
+                Select {plan.name}
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function Subscribe() {
+  const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const [clientSecret, setClientSecret] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSelectPlan = async (plan: string) => {
+    setIsLoading(true);
+    setSelectedPlan(plan);
+    
+    // Check if Stripe is configured
+    if (!stripePromise) {
+      setIsLoading(false);
+      return; // Will show the "contact support" message
+    }
+    
+    try {
+      const response = await apiRequest("POST", "/api/create-subscription", { plan });
+      const data = await response.json();
+      setClientSecret(data.clientSecret);
+    } catch (error: any) {
+      console.error('Error creating subscription:', error);
+      // Don't reset selectedPlan - show the error message instead
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (selectedPlan && !clientSecret && isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mx-auto" />
+          <p className="text-slate-400">Setting up your subscription...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (selectedPlan && !isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <Card className="w-full max-w-md glassmorphism border-slate-700">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl text-slate-200">
+              Complete Your Subscription
+            </CardTitle>
+            <p className="text-slate-400">
+              Subscribe to {plans.find(p => p.id === selectedPlan)?.name} plan
+            </p>
+          </CardHeader>
+          <CardContent>
+            {stripePromise ? (
+              <Elements stripe={stripePromise} options={{ clientSecret }}>
+                <SubscribeForm selectedPlan={selectedPlan} />
+              </Elements>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-slate-400 mb-4">Stripe is not configured. Please contact support.</p>
+                <Button onClick={() => setSelectedPlan(null)} variant="outline">
+                  Go Back
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen px-4 py-8">
+      <div className="max-w-6xl mx-auto">
+        <PlanSelection onSelectPlan={handleSelectPlan} />
+      </div>
+    </div>
+  );
+}
+
+=== SERVER/INDEX.TS ===
+import express, { type Request, Response, NextFunction } from "express";
+import { registerRoutes } from "./routes";
+import { setupVite, serveStatic, log } from "./vite";
+
+const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+
+app.use((req, res, next) => {
+  const start = Date.now();
+  const path = req.path;
+  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+
+  const originalResJson = res.json;
+  res.json = function (bodyJson, ...args) {
+    capturedJsonResponse = bodyJson;
+    return originalResJson.apply(res, [bodyJson, ...args]);
+  };
+
+  res.on("finish", () => {
+    const duration = Date.now() - start;
+    if (path.startsWith("/api")) {
+      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+      if (capturedJsonResponse) {
+        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+      }
+
+      if (logLine.length > 80) {
+        logLine = logLine.slice(0, 79) + "…";
+      }
+
+      log(logLine);
+    }
+  });
+
+  next();
+});
+
+(async () => {
+  const server = await registerRoutes(app);
+
+  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    const status = err.status || err.statusCode || 500;
+    const message = err.message || "Internal Server Error";
+
+    res.status(status).json({ message });
+    throw err;
+  });
+
+  // importantly only setup vite in development and after
+  // setting up all the other routes so the catch-all route
+  // doesn't interfere with the other routes
+  if (app.get("env") === "development") {
+    await setupVite(app, server);
+  } else {
+    serveStatic(app);
+  }
+
+  // ALWAYS serve the app on the port specified in the environment variable PORT
+  // Other ports are firewalled. Default to 5000 if not specified.
+  // this serves both the API and the client.
+  // It is the only port that is not firewalled.
+  const port = parseInt(process.env.PORT || '5000', 10);
+  server.listen({
+    port,
+    host: "0.0.0.0",
+    reusePort: true,
+  }, () => {
+    log(`serving on port ${port}`);
+  });
+})();
+
+=== SERVER/ROUTES.TS ===
+import type { Express } from "express";
+import { createServer, type Server } from "http";
+import { WebSocketServer, WebSocket } from "ws";
+import Stripe from "stripe";
+import { storage } from "./storage";
+import { insertUserSchema, insertMinecraftAccountSchema, PLAN_LIMITS } from "@shared/schema";
+import session from "express-session";
+import MemoryStore from "memorystore";
+
+// Stripe will be configured when secrets are provided
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+
+let stripe: Stripe | null = null;
+if (STRIPE_SECRET_KEY) {
+  stripe = new Stripe(STRIPE_SECRET_KEY, {
+    apiVersion: "2023-10-16",
+  });
+}
+
+const MemoryStoreSession = MemoryStore(session);
+
+// Bot command interface
+interface BotCommand {
+  type: string;
+  accountId: string;
+  userId: string;
+  command: string;
+  params?: any;
+}
+
+// WebSocket connections
+const wsConnections = new Map<string, WebSocket>();
+
+export async function registerRoutes(app: Express): Promise<Server> {
+  // Session middleware
+  app.use(session({
+    secret: process.env.SESSION_SECRET || 'afkbot-secret-key',
+    resave: false,
+    saveUninitialized: false,
+    store: new MemoryStoreSession({
+      checkPeriod: 86400000 // prune expired entries every 24h
+    }),
+    cookie: {
+      secure: false, // Set to true in production with HTTPS
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    }
+  }));
+
+  // Auth middleware
+  const requireAuth = (req: any, res: any, next: any) => {
+    if (!req.session?.userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    next();
+  };
+
+  // Microsoft OAuth simulation (in production, use proper OAuth flow)
+  app.post('/api/auth/microsoft', async (req, res) => {
+    try {
+      const { email, username, microsoftId } = req.body;
+      
+      if (!email || !username || !microsoftId) {
+        return res.status(400).json({ error: 'Missing required fields' });
+      }
+
+      let user = await storage.getUserByMicrosoftId(microsoftId);
+      
+      if (!user) {
+        user = await storage.getUserByEmail(email);
+        if (user) {
+          user = await storage.updateUser(user.id, { microsoftId });
+        } else {
+          user = await storage.createUser({ email, username, microsoftId });
+        }
+      }
+
+      if (!user) {
+        return res.status(500).json({ error: 'Failed to create user' });
+      }
+
+      req.session.userId = user.id;
+      res.json({ user, redirectTo: user.plan === 'none' ? '/subscribe' : '/dashboard' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/auth/logout', (req, res) => {
+    req.session.destroy((err: any) => {
+      if (err) {
+        return res.status(500).json({ error: 'Logout failed' });
+      }
+      res.json({ success: true });
+    });
+  });
+
+  app.get('/api/auth/me', requireAuth, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      res.json(user);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Subscription endpoints
+  app.post('/api/create-subscription', requireAuth, async (req: any, res) => {
+    try {
+      if (!stripe) {
+        return res.status(500).json({ error: 'Payment system not configured' });
+      }
+
+      const { plan } = req.body;
+      const user = await storage.getUser(req.session.userId);
+      
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      if (!PLAN_LIMITS[plan as keyof typeof PLAN_LIMITS]) {
+        return res.status(400).json({ error: 'Invalid plan' });
+      }
+
+      let customerId = user.stripeCustomerId;
+      
+      if (!customerId) {
+        const customer = await stripe.customers.create({
+          email: user.email,
+          name: user.username,
+        });
+        customerId = customer.id;
+        await storage.updateUser(user.id, { stripeCustomerId: customerId });
+      }
+
+      const priceIds = {
+        'standard': 'price_1Rqc90FaWc1I1ZkFBBen3aAH',
+        'premium': 'price_1RqcekFaWc1I1ZkF5A2eY22Z',
+        'supreme': 'price_1RqcgtFaWc1I1ZkFvMg5PjpU'
+      };
+      
+      const priceId = priceIds[plan as keyof typeof priceIds];
+      if (!priceId) {
+        return res.status(500).json({ error: `Invalid plan: ${plan}` });
+      }
+
+      const subscription = await stripe.subscriptions.create({
+        customer: customerId,
+        items: [{ price: priceId }],
+        payment_behavior: 'default_incomplete',
+        expand: ['latest_invoice.payment_intent'],
+      });
+
+      await storage.updateUserPlan(user.id, plan, customerId, subscription.id);
+
+      res.json({
+        subscriptionId: subscription.id,
+        clientSecret: (subscription.latest_invoice as any)?.payment_intent?.client_secret,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Stripe webhook
+  app.post('/api/webhooks/stripe', async (req, res) => {
+    const sig = req.headers['stripe-signature'];
+    let event;
+
+    try {
+      event = stripe.webhooks.constructEvent(req.body, sig as string, process.env.STRIPE_WEBHOOK_SECRET!);
+    } catch (err: any) {
+      console.error('Webhook signature verification failed:', err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    if (event.type === 'invoice.payment_succeeded') {
+      const invoice = event.data.object as any;
+      const subscriptionId = invoice.subscription;
+      
+      // Find user by subscription ID and update plan status
+      // This is simplified - in production you'd store more metadata
+    }
+
+    res.json({ received: true });
+  });
+
+  // Dashboard endpoints
+  app.get('/api/dashboard', requireAuth, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const accounts = await storage.getAccountsByUserId(user.id);
+      const activeSessions = await storage.getActiveSessionsByUserId(user.id);
+      const notifications = await storage.getNotificationsByUserId(user.id, 5);
+
+      const planLimits = PLAN_LIMITS[user.plan as keyof typeof PLAN_LIMITS];
+
+      res.json({
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          plan: user.plan,
+          maxAccounts: planLimits.maxAccounts,
+        },
+        accounts,
+        activeSessions,
+        notifications,
+        stats: {
+          totalAccounts: accounts.length,
+          activeAccounts: accounts.filter(acc => acc.isActive).length,
+          totalXp: activeSessions.reduce((sum, session) => sum + session.xpGained, 0),
+          totalBlocks: activeSessions.reduce((sum, session) => sum + session.blocksMined, 0),
+        }
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Minecraft account endpoints
+  app.post('/api/accounts', requireAuth, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const { email, username } = req.body;
+      const accounts = await storage.getAccountsByUserId(user.id);
+      const planLimits = PLAN_LIMITS[user.plan as keyof typeof PLAN_LIMITS];
+
+      if (accounts.length >= planLimits.maxAccounts) {
+        return res.status(400).json({ 
+          error: `Account limit reached. Your ${user.plan} plan allows ${planLimits.maxAccounts} accounts.` 
+        });
+      }
+
+      const account = await storage.createAccount({
+        userId: user.id,
+        email,
+        username,
+      });
+
+      res.json(account);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete('/api/accounts/:id', requireAuth, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const account = await storage.getAccount(id);
+      
+      if (!account || account.userId !== req.session.userId) {
+        return res.status(404).json({ error: 'Account not found' });
+      }
+
+      await storage.deleteAccount(id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Bot control endpoints
+  app.post('/api/bot/start', requireAuth, async (req: any, res) => {
+    try {
+      const { accountId } = req.body;
+      const account = await storage.getAccount(accountId);
+      
+      if (!account || account.userId !== req.session.userId) {
+        return res.status(404).json({ error: 'Account not found' });
+      }
+
+      await storage.updateAccount(accountId, { isActive: true, status: 'online' });
+      await storage.createSession({ userId: req.session.userId, accountId });
+
+      // Send WebSocket command to bot
+      const command: BotCommand = {
+        type: 'START_BOT',
+        accountId,
+        userId: req.session.userId,
+        command: 'start',
+      };
+
+      broadcastToUser(req.session.userId, command);
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/bot/stop', requireAuth, async (req: any, res) => {
+    try {
+      const { accountId } = req.body;
+      const account = await storage.getAccount(accountId);
+      
+      if (!account || account.userId !== req.session.userId) {
+        return res.status(404).json({ error: 'Account not found' });
+      }
+
+      await storage.updateAccount(accountId, { isActive: false, status: 'offline' });
+
+      // End active sessions
+      const activeSessions = await storage.getActiveSessionsByUserId(req.session.userId);
+      const accountSession = activeSessions.find(s => s.accountId === accountId);
+      if (accountSession) {
+        await storage.endSession(accountSession.id);
+      }
+
+      // Send WebSocket command to bot
+      const command: BotCommand = {
+        type: 'STOP_BOT',
+        accountId,
+        userId: req.session.userId,
+        command: 'stop',
+      };
+
+      broadcastToUser(req.session.userId, command);
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/bot/command', requireAuth, async (req: any, res) => {
+    try {
+      const { accountId, command, params } = req.body;
+      const account = await storage.getAccount(accountId);
+      
+      if (!account || account.userId !== req.session.userId) {
+        return res.status(404).json({ error: 'Account not found' });
+      }
+
+      const botCommand: BotCommand = {
+        type: 'BOT_COMMAND',
+        accountId,
+        userId: req.session.userId,
+        command,
+        params,
+      };
+
+      broadcastToUser(req.session.userId, botCommand);
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // WebSocket broadcast helper
+  function broadcastToUser(userId: string, message: any) {
+    const ws = wsConnections.get(userId);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(message));
+    }
+  }
+
+  const httpServer = createServer(app);
+
+  // WebSocket server
+  const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+
+  wss.on('connection', (ws, req) => {
+    console.log('WebSocket connection established');
+
+    ws.on('message', async (message) => {
+      try {
+        const data = JSON.parse(message.toString());
+        
+        if (data.type === 'AUTH' && data.userId) {
+          wsConnections.set(data.userId, ws);
+          ws.send(JSON.stringify({ type: 'AUTH_SUCCESS' }));
+        }
+
+        if (data.type === 'BOT_UPDATE') {
+          // Handle bot status updates from Minecraft bot
+          const { accountId, status, xpGained, blocksMined } = data;
+          
+          if (accountId) {
+            await storage.updateAccount(accountId, { 
+              status, 
+              lastActivity: new Date() 
+            });
+
+            // Update active session
+            const activeSessions = await storage.getActiveSessionsByUserId(data.userId);
+            const session = activeSessions.find(s => s.accountId === accountId);
+            if (session) {
+              await storage.updateSession(session.id, { xpGained, blocksMined });
+            }
+
+            // Create notification
+            if (data.message) {
+              await storage.createNotification({
+                userId: data.userId,
+                message: data.message,
+                type: data.notificationType || 'info',
+              });
+            }
+
+            // Broadcast update to user
+            broadcastToUser(data.userId, {
+              type: 'DASHBOARD_UPDATE',
+              accountId,
+              status,
+              xpGained,
+              blocksMined,
+            });
+          }
+        }
+      } catch (error) {
+        console.error('WebSocket message error:', error);
+      }
+    });
+
+    ws.on('close', () => {
+      // Remove connection
+      for (const [userId, connection] of wsConnections.entries()) {
+        if (connection === ws) {
+          wsConnections.delete(userId);
+          break;
+        }
+      }
+    });
+  });
+
+  return httpServer;
+}
+
+=== SERVER/STORAGE.TS ===
+import { type User, type InsertUser, type MinecraftAccount, type InsertMinecraftAccount, type BotSession, type InsertBotSession, type Notification, type InsertNotification } from "@shared/schema";
+import { randomUUID } from "crypto";
+
+export interface IStorage {
+  // User operations
+  getUser(id: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  getUserByMicrosoftId(microsoftId: string): Promise<User | undefined>;
+  createUser(user: InsertUser): Promise<User>;
+  updateUser(id: string, updates: Partial<User>): Promise<User | undefined>;
+  updateUserPlan(id: string, plan: string, stripeCustomerId?: string, stripeSubscriptionId?: string): Promise<User | undefined>;
+
+  // Minecraft account operations
+  getAccountsByUserId(userId: string): Promise<MinecraftAccount[]>;
+  getAccount(id: string): Promise<MinecraftAccount | undefined>;
+  createAccount(account: InsertMinecraftAccount): Promise<MinecraftAccount>;
+  updateAccount(id: string, updates: Partial<MinecraftAccount>): Promise<MinecraftAccount | undefined>;
+  deleteAccount(id: string): Promise<boolean>;
+
+  // Bot session operations
+  getActiveSessionsByUserId(userId: string): Promise<BotSession[]>;
+  createSession(session: InsertBotSession): Promise<BotSession>;
+  updateSession(id: string, updates: Partial<BotSession>): Promise<BotSession | undefined>;
+  endSession(id: string, xpGained?: number, blocksMined?: number): Promise<BotSession | undefined>;
+
+  // Notification operations
+  getNotificationsByUserId(userId: string, limit?: number): Promise<Notification[]>;
+  createNotification(notification: InsertNotification): Promise<Notification>;
+  markNotificationAsRead(id: string): Promise<boolean>;
+}
+
+export class MemStorage implements IStorage {
+  private users: Map<string, User> = new Map();
+  private accounts: Map<string, MinecraftAccount> = new Map();
+  private sessions: Map<string, BotSession> = new Map();
+  private notifications: Map<string, Notification> = new Map();
+
+  // User operations
+  async getUser(id: string): Promise<User | undefined> {
+    return this.users.get(id);
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(user => user.email === email);
+  }
+
+  async getUserByMicrosoftId(microsoftId: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(user => user.microsoftId === microsoftId);
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const id = randomUUID();
+    const user: User = {
+      ...insertUser,
+      id,
+      plan: "none",
+      stripeCustomerId: null,
+      stripeSubscriptionId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.users.set(id, user);
+    return user;
+  }
+
+  async updateUser(id: string, updates: Partial<User>): Promise<User | undefined> {
+    const user = this.users.get(id);
+    if (!user) return undefined;
+    
+    const updatedUser = { ...user, ...updates, updatedAt: new Date() };
+    this.users.set(id, updatedUser);
+    return updatedUser;
+  }
+
+  async updateUserPlan(id: string, plan: string, stripeCustomerId?: string, stripeSubscriptionId?: string): Promise<User | undefined> {
+    return this.updateUser(id, { plan, stripeCustomerId, stripeSubscriptionId });
+  }
+
+  // Minecraft account operations
+  async getAccountsByUserId(userId: string): Promise<MinecraftAccount[]> {
+    return Array.from(this.accounts.values()).filter(account => account.userId === userId);
+  }
+
+  async getAccount(id: string): Promise<MinecraftAccount | undefined> {
+    return this.accounts.get(id);
+  }
+
+  async createAccount(insertAccount: InsertMinecraftAccount): Promise<MinecraftAccount> {
+    const id = randomUUID();
+    const account: MinecraftAccount = {
+      ...insertAccount,
+      id,
+      status: "offline",
+      isActive: false,
+      lastActivity: null,
+      createdAt: new Date(),
+    };
+    this.accounts.set(id, account);
+    return account;
+  }
+
+  async updateAccount(id: string, updates: Partial<MinecraftAccount>): Promise<MinecraftAccount | undefined> {
+    const account = this.accounts.get(id);
+    if (!account) return undefined;
+    
+    const updatedAccount = { ...account, ...updates };
+    this.accounts.set(id, updatedAccount);
+    return updatedAccount;
+  }
+
+  async deleteAccount(id: string): Promise<boolean> {
+    return this.accounts.delete(id);
+  }
+
+  // Bot session operations
+  async getActiveSessionsByUserId(userId: string): Promise<BotSession[]> {
+    return Array.from(this.sessions.values()).filter(
+      session => session.userId === userId && session.status === "active"
+    );
+  }
+
+  async createSession(insertSession: InsertBotSession): Promise<BotSession> {
+    const id = randomUUID();
+    const session: BotSession = {
+      ...insertSession,
+      id,
+      startTime: new Date(),
+      endTime: null,
+      xpGained: 0,
+      blocksMined: 0,
+      status: "active",
+    };
+    this.sessions.set(id, session);
+    return session;
+  }
+
+  async updateSession(id: string, updates: Partial<BotSession>): Promise<BotSession | undefined> {
+    const session = this.sessions.get(id);
+    if (!session) return undefined;
+    
+    const updatedSession = { ...session, ...updates };
+    this.sessions.set(id, updatedSession);
+    return updatedSession;
+  }
+
+  async endSession(id: string, xpGained?: number, blocksMined?: number): Promise<BotSession | undefined> {
+    return this.updateSession(id, {
+      endTime: new Date(),
+      xpGained: xpGained || 0,
+      blocksMined: blocksMined || 0,
+      status: "completed"
+    });
+  }
+
+  // Notification operations
+  async getNotificationsByUserId(userId: string, limit: number = 10): Promise<Notification[]> {
+    return Array.from(this.notifications.values())
+      .filter(notification => notification.userId === userId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, limit);
+  }
+
+  async createNotification(insertNotification: InsertNotification): Promise<Notification> {
+    const id = randomUUID();
+    const notification: Notification = {
+      ...insertNotification,
+      id,
+      isRead: false,
+      createdAt: new Date(),
+    };
+    this.notifications.set(id, notification);
+    return notification;
+  }
+
+  async markNotificationAsRead(id: string): Promise<boolean> {
+    const notification = this.notifications.get(id);
+    if (!notification) return false;
+    
+    notification.isRead = true;
+    this.notifications.set(id, notification);
+    return true;
+  }
+}
+
+export const storage = new MemStorage();
+
+=== SHARED/SCHEMA.TS ===
+import { sql } from "drizzle-orm";
+import { pgTable, text, varchar, timestamp, integer, boolean } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod";
+
+export const users = pgTable("users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull().unique(),
+  username: text("username").notNull(),
+  microsoftId: text("microsoft_id").unique(),
+  plan: text("plan").notNull().default("none"), // none, standard, premium, supreme
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const minecraftAccounts = pgTable("minecraft_accounts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  username: text("username").notNull(),
+  status: text("status").notNull().default("offline"), // offline, online, mining, farming, etc.
+  isActive: boolean("is_active").notNull().default(false),
+  lastActivity: timestamp("last_activity"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const botSessions = pgTable("bot_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  accountId: varchar("account_id").notNull().references(() => minecraftAccounts.id, { onDelete: "cascade" }),
+  startTime: timestamp("start_time").defaultNow(),
+  endTime: timestamp("end_time"),
+  xpGained: integer("xp_gained").default(0),
+  blocksMined: integer("blocks_mined").default(0),
+  status: text("status").notNull().default("active"), // active, completed, error
+});
+
+export const notifications = pgTable("notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  message: text("message").notNull(),
+  type: text("type").notNull().default("info"), // info, success, warning, error
+  isRead: boolean("is_read").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Insert schemas
+export const insertUserSchema = createInsertSchema(users).pick({
+  email: true,
+  username: true,
+  microsoftId: true,
+  plan: true,
+});
+
+export const insertMinecraftAccountSchema = createInsertSchema(minecraftAccounts).pick({
+  userId: true,
+  email: true,
+  username: true,
+});
+
+export const insertBotSessionSchema = createInsertSchema(botSessions).pick({
+  userId: true,
+  accountId: true,
+});
+
+export const insertNotificationSchema = createInsertSchema(notifications).pick({
+  userId: true,
+  message: true,
+  type: true,
+});
+
+// Types
+export type User = typeof users.$inferSelect;
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type MinecraftAccount = typeof minecraftAccounts.$inferSelect;
+export type InsertMinecraftAccount = z.infer<typeof insertMinecraftAccountSchema>;
+export type BotSession = typeof botSessions.$inferSelect;
+export type InsertBotSession = z.infer<typeof insertBotSessionSchema>;
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+
+// Plan configurations
+export const PLAN_LIMITS = {
+  none: { maxAccounts: 0, price: 0 },
+  standard: { maxAccounts: 3, price: 5 },
+  premium: { maxAccounts: 6, price: 7 },
+  supreme: { maxAccounts: 10, price: 11 },
+} as const;
+
+export type PlanType = keyof typeof PLAN_LIMITS;
+
+=== PACKAGE.JSON ===
+{
+  "name": "rest-express",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "dev": "NODE_ENV=development tsx server/index.ts",
+    "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+    "start": "NODE_ENV=production node dist/index.js",
+    "check": "tsc",
+    "db:push": "drizzle-kit push"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^3.10.0",
+    "@jridgewell/trace-mapping": "^0.3.25",
+    "@neondatabase/serverless": "^0.10.4",
+    "@radix-ui/react-accordion": "^1.2.4",
+    "@radix-ui/react-alert-dialog": "^1.1.7",
+    "@radix-ui/react-aspect-ratio": "^1.1.3",
+    "@radix-ui/react-avatar": "^1.1.4",
+    "@radix-ui/react-checkbox": "^1.1.5",
+    "@radix-ui/react-collapsible": "^1.1.4",
+    "@radix-ui/react-context-menu": "^2.2.7",
+    "@radix-ui/react-dialog": "^1.1.7",
+    "@radix-ui/react-dropdown-menu": "^2.1.7",
+    "@radix-ui/react-hover-card": "^1.1.7",
+    "@radix-ui/react-label": "^2.1.3",
+    "@radix-ui/react-menubar": "^1.1.7",
+    "@radix-ui/react-navigation-menu": "^1.2.6",
+    "@radix-ui/react-popover": "^1.1.7",
+    "@radix-ui/react-progress": "^1.1.3",
+    "@radix-ui/react-radio-group": "^1.2.4",
+    "@radix-ui/react-scroll-area": "^1.2.4",
+    "@radix-ui/react-select": "^2.1.7",
+    "@radix-ui/react-separator": "^1.1.3",
+    "@radix-ui/react-slider": "^1.2.4",
+    "@radix-ui/react-slot": "^1.2.0",
+    "@radix-ui/react-switch": "^1.1.4",
+    "@radix-ui/react-tabs": "^1.1.4",
+    "@radix-ui/react-toast": "^1.2.7",
+    "@radix-ui/react-toggle": "^1.1.3",
+    "@radix-ui/react-toggle-group": "^1.1.3",
+    "@radix-ui/react-tooltip": "^1.2.0",
+    "@stripe/react-stripe-js": "^3.9.0",
+    "@stripe/stripe-js": "^7.8.0",
+    "@tanstack/react-query": "^5.60.5",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
+    "connect-pg-simple": "^10.0.0",
+    "date-fns": "^3.6.0",
+    "drizzle-orm": "^0.39.1",
+    "drizzle-zod": "^0.7.0",
+    "embla-carousel-react": "^8.6.0",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "framer-motion": "^11.13.1",
+    "input-otp": "^1.4.2",
+    "lucide-react": "^0.453.0",
+    "memorystore": "^1.6.7",
+    "nanoid": "^5.1.5",
+    "next-themes": "^0.4.6",
+    "passport": "^0.7.0",
+    "passport-local": "^1.0.0",
+    "react": "^18.3.1",
+    "react-day-picker": "^8.10.1",
+    "react-dom": "^18.3.1",
+    "react-hook-form": "^7.55.0",
+    "react-icons": "^5.4.0",
+    "react-resizable-panels": "^2.1.7",
+    "recharts": "^2.15.2",
+    "stripe": "^18.4.0",
+    "tailwind-merge": "^2.6.0",
+    "tailwindcss-animate": "^1.0.7",
+    "tw-animate-css": "^1.2.5",
+    "vaul": "^1.1.2",
+    "wouter": "^3.3.5",
+    "ws": "^8.18.0",
+    "zod": "^3.24.2",
+    "zod-validation-error": "^3.4.0"
+  },
+  "devDependencies": {
+    "@replit/vite-plugin-cartographer": "^0.2.8",
+    "@replit/vite-plugin-runtime-error-modal": "^0.0.3",
+    "@tailwindcss/typography": "^0.5.15",
+    "@tailwindcss/vite": "^4.1.3",
+    "@types/connect-pg-simple": "^7.0.3",
+    "@types/express": "4.17.21",
+    "@types/express-session": "^1.18.0",
+    "@types/node": "20.16.11",
+    "@types/passport": "^1.0.16",
+    "@types/passport-local": "^1.0.38",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "@types/ws": "^8.5.13",
+    "@vitejs/plugin-react": "^4.3.2",
+    "autoprefixer": "^10.4.20",
+    "drizzle-kit": "^0.30.4",
+    "esbuild": "^0.25.0",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.1",
+    "typescript": "5.6.3",
+    "vite": "^5.4.19"
+  },
+  "optionalDependencies": {
+    "bufferutil": "^4.0.8"
+  }
+}
+
+=== BOT CONTROLS ===
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
+import { 
+  Play, 
+  Square, 
+  RotateCcw,
+  Activity,
+  MapPin,
+  Heart,
+  Shield,
+  Timer,
+  User,
+  Hash,
+  Users,
+  MessageSquare,
+  Wifi,
+  BarChart3,
+  Navigation,
+  Globe,
+  Zap,
+  Gamepad2,
+  AlertTriangle,
+  UserPlus,
+  UserMinus,
+  Palette,
+  Crown,
+  Calendar,
+  Lock,
+  RefreshCw,
+  Terminal,
+  FileText,
+  Settings,
+  Info
+} from "lucide-react";
+
+interface BotControlsProps {
+  accounts: Array<{
+    id: string;
+    username: string;
+    isActive: boolean;
+  }>;
+}
+
+export default function BotControls({ accounts }: BotControlsProps) {
+  const { toast } = useToast();
+
+  const sendCommand = async (command: string, params?: any) => {
+    const activeAccounts = accounts.filter(acc => acc.isActive);
+    
+    if (activeAccounts.length === 0) {
+      toast({
+        title: "No Active Bots",
+        description: "Start at least one bot to use commands",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // Send command to all active accounts
+      await Promise.all(
+        activeAccounts.map(account =>
+          apiRequest("POST", "/api/bot/command", {
+            accountId: account.id,
+            command,
+            params,
+          })
+        )
+      );
+
+      toast({
+        title: "Command Sent",
+        description: `${command} command sent to ${activeAccounts.length} bot(s)`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Command Failed",
+        description: error.message || "Failed to send command",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const startAllBots = async () => {
+    const inactiveAccounts = accounts.filter(acc => !acc.isActive);
+    
+    if (inactiveAccounts.length === 0) {
+      toast({
+        title: "All Bots Active",
+        description: "All bots are already running",
+      });
+      return;
+    }
+
+    try {
+      await Promise.all(
+        inactiveAccounts.map(account =>
+          apiRequest("POST", "/api/bot/start", { accountId: account.id })
+        )
+      );
+
+      toast({
+        title: "Bots Started",
+        description: `Started ${inactiveAccounts.length} bot(s)`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Failed to Start Bots",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const stopAllBots = async () => {
+    const activeAccounts = accounts.filter(acc => acc.isActive);
+    
+    if (activeAccounts.length === 0) {
+      toast({
+        title: "No Active Bots",
+        description: "No bots are currently running",
+      });
+      return;
+    }
+
+    try {
+      await Promise.all(
+        activeAccounts.map(account =>
+          apiRequest("POST", "/api/bot/stop", { accountId: account.id })
+        )
+      );
+
+      toast({
+        title: "Bots Stopped",
+        description: `Stopped ${activeAccounts.length} bot(s)`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Failed to Stop Bots",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  return (
+    <Card className="glassmorphism">
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle className="text-xl font-semibold text-slate-200">Bot Controls</CardTitle>
+        <div className="flex items-center space-x-2">
+          <span className="text-sm text-slate-400">Quick Actions:</span>
+          <Button onClick={startAllBots} className="gradient-button px-4 py-2 text-sm font-medium">
+            <Play className="h-4 w-4 mr-2" />
+            Start All
+          </Button>
+          <Button 
+            onClick={stopAllBots} 
+            className="bg-red-600 hover:bg-red-500 px-4 py-2 text-sm font-medium"
+          >
+            <Square className="h-4 w-4 mr-2" />
+            Stop All
+          </Button>
+        </div>
+      </CardHeader>
+
+      <CardContent>
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+          
+          {/* Bot Management */}
+          <div className="space-y-4">
+            <h4 className="text-lg font-medium text-primary border-b border-primary/30 pb-2">Bot Management</h4>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                onClick={() => sendCommand("start_bot")}
+                className="gradient-button h-12 font-medium"
+              >
+                <Play className="h-4 w-4 mr-2" />
+                Start Bot
+              </Button>
+              <Button
+                onClick={() => sendCommand("stop_bot")}
+                className="bg-red-600 hover:bg-red-500 h-12 font-medium"
+              >
+                <Square className="h-4 w-4 mr-2" />
+                Stop Bot
+              </Button>
+              <Button
+                onClick={() => sendCommand("restart_bot")}
+                className="bg-orange-600 hover:bg-orange-500 h-12 font-medium"
+              >
+                <RotateCcw className="h-4 w-4 mr-2" />
+                Genstart Bot
+              </Button>
+              <Button
+                onClick={() => sendCommand("check_status")}
+                className="bg-blue-600 hover:bg-blue-500 h-12 font-medium"
+              >
+                <Activity className="h-4 w-4 mr-2" />
+                Se Status
+              </Button>
+              <Button
+                onClick={() => sendCommand("afk_hop")}
+                className="bg-green-600 hover:bg-green-500 h-12 font-medium"
+              >
+                <Timer className="h-4 w-4 mr-2" />
+                AFK Hop (5s)
+              </Button>
+              <Button
+                onClick={() => sendCommand("refresh_status")}
+                className="bg-purple-600 hover:bg-purple-500 h-12 font-medium"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh Status
+              </Button>
+            </div>
+          </div>
+
+          {/* Live Monitoring */}
+          <div className="space-y-4">
+            <h4 className="text-lg font-medium text-primary border-b border-primary/30 pb-2">Live Monitoring</h4>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                onClick={() => sendCommand("get_position")}
+                className="bg-cyan-600 hover:bg-cyan-500 h-12 font-medium"
+              >
+                <MapPin className="h-4 w-4 mr-2" />
+                Live Position
+              </Button>
+              <Button
+                onClick={() => sendCommand("get_health")}
+                className="bg-red-600 hover:bg-red-500 h-12 font-medium"
+              >
+                <Heart className="h-4 w-4 mr-2" />
+                Health & Armor
+              </Button>
+              <Button
+                onClick={() => sendCommand("get_coordinates")}
+                className="bg-teal-600 hover:bg-teal-500 h-12 font-medium"
+              >
+                <Navigation className="h-4 w-4 mr-2" />
+                Live Koordinater
+              </Button>
+              <Button
+                onClick={() => sendCommand("get_fps")}
+                className="bg-indigo-600 hover:bg-indigo-500 h-12 font-medium"
+              >
+                <BarChart3 className="h-4 w-4 mr-2" />
+                Live FPS
+              </Button>
+              <Button
+                onClick={() => sendCommand("get_ping")}
+                className="bg-yellow-600 hover:bg-yellow-500 h-12 font-medium"
+              >
+                <Wifi className="h-4 w-4 mr-2" />
+                Live Ping
+              </Button>
+              <Button
+                onClick={() => sendCommand("get_xp")}
+                className="bg-emerald-600 hover:bg-emerald-500 h-12 font-medium"
+              >
+                <Zap className="h-4 w-4 mr-2" />
+                XP Niveau
+              </Button>
+            </div>
+          </div>
+
+          {/* Statistics & Info */}
+          <div className="space-y-4">
+            <h4 className="text-lg font-medium text-primary border-b border-primary/30 pb-2">Statistikker & Info</h4>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                onClick={() => sendCommand("get_uptime")}
+                className="bg-slate-600 hover:bg-slate-500 h-12 font-medium"
+              >
+                <Timer className="h-4 w-4 mr-2" />
+                Se Uptime
+              </Button>
+              <Button
+                onClick={() => sendCommand("get_afk_time")}
+                className="bg-violet-600 hover:bg-violet-500 h-12 font-medium"
+              >
+                <Activity className="h-4 w-4 mr-2" />
+                AFK Tid Total
+              </Button>
+              <Button
+                onClick={() => sendCommand("get_player_info")}
+                className="bg-blue-600 hover:bg-blue-500 h-12 font-medium"
+              >
+                <User className="h-4 w-4 mr-2" />
+                Spillernavn
+              </Button>
+              <Button
+                onClick={() => sendCommand("get_uuid")}
+                className="bg-gray-600 hover:bg-gray-500 h-12 font-medium"
+              >
+                <Hash className="h-4 w-4 mr-2" />
+                UUID
+              </Button>
+              <Button
+                onClick={() => sendCommand("get_nearest_player")}
+                className="bg-pink-600 hover:bg-pink-500 h-12 font-medium"
+              >
+                <Users className="h-4 w-4 mr-2" />
+                Nærmeste Spiller
+              </Button>
+              <Button
+                onClick={() => sendCommand("get_dimension")}
+                className="bg-purple-600 hover:bg-purple-500 h-12 font-medium"
+              >
+                <Globe className="h-4 w-4 mr-2" />
+                Dimension
+              </Button>
+            </div>
+          </div>
+
+          {/* Account Management */}
+          <div className="space-y-4">
+            <h4 className="text-lg font-medium text-primary border-b border-primary/30 pb-2">Konto Management</h4>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                onClick={() => sendCommand("add_account")}
+                className="bg-green-600 hover:bg-green-500 h-12 font-medium"
+              >
+                <UserPlus className="h-4 w-4 mr-2" />
+                Tilføj Konto
+              </Button>
+              <Button
+                onClick={() => sendCommand("remove_account")}
+                className="bg-red-600 hover:bg-red-500 h-12 font-medium"
+              >
+                <UserMinus className="h-4 w-4 mr-2" />
+                Fjern Konto
+              </Button>
+              <Button
+                onClick={() => sendCommand("change_skin")}
+                className="bg-orange-600 hover:bg-orange-500 h-12 font-medium"
+              >
+                <Palette className="h-4 w-4 mr-2" />
+                Skift Skin
+              </Button>
+              <Button
+                onClick={() => sendCommand("check_auth")}
+                className="bg-blue-600 hover:bg-blue-500 h-12 font-medium"
+              >
+                <Shield className="h-4 w-4 mr-2" />
+                Check Auth
+              </Button>
+            </div>
+          </div>
+
+          {/* Alerts & Notifications */}
+          <div className="space-y-4">
+            <h4 className="text-lg font-medium text-primary border-b border-primary/30 pb-2">Alerts & Chat</h4>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                onClick={() => sendCommand("proximity_alert")}
+                className="bg-yellow-600 hover:bg-yellow-500 h-12 font-medium"
+              >
+                <AlertTriangle className="h-4 w-4 mr-2" />
+                Proximity Alert
+              </Button>
+              <Button
+                onClick={() => sendCommand("last_message")}
+                className="bg-teal-600 hover:bg-teal-500 h-12 font-medium"
+              >
+                <MessageSquare className="h-4 w-4 mr-2" />
+                Sidste Besked
+              </Button>
+              <Button
+                onClick={() => sendCommand("chat_log")}
+                className="bg-indigo-600 hover:bg-indigo-500 h-12 font-medium"
+              >
+                <FileText className="h-4 w-4 mr-2" />
+                Chat Log 24h
+              </Button>
+              <Button
+                onClick={() => sendCommand("console_view")}
+                className="bg-gray-600 hover:bg-gray-500 h-12 font-medium"
+              >
+                <Terminal className="h-4 w-4 mr-2" />
+                Se Konsol
+              </Button>
+            </div>
+          </div>
+
+          {/* Plan & Settings */}
+          <div className="space-y-4">
+            <h4 className="text-lg font-medium text-primary border-b border-primary/30 pb-2">Plan & Indstillinger</h4>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                onClick={() => sendCommand("current_plan")}
+                className="bg-purple-600 hover:bg-purple-500 h-12 font-medium"
+              >
+                <Crown className="h-4 w-4 mr-2" />
+                Nuværende Plan
+              </Button>
+              <Button
+                onClick={() => sendCommand("plan_expiry")}
+                className="bg-orange-600 hover:bg-orange-500 h-12 font-medium"
+              >
+                <Calendar className="h-4 w-4 mr-2" />
+                Udløbsdato
+              </Button>
+              <Button
+                onClick={() => sendCommand("account_limits")}
+                className="bg-red-600 hover:bg-red-500 h-12 font-medium"
+              >
+                <Lock className="h-4 w-4 mr-2" />
+                Konto Grænser
+              </Button>
+              <Button
+                onClick={() => sendCommand("version_info")}
+                className="bg-slate-600 hover:bg-slate-500 h-12 font-medium"
+              >
+                <Info className="h-4 w-4 mr-2" />
+                Version Info
+              </Button>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+=== CLIENT INDEX.CSS ===
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: hsl(0, 0%, 100%);
+  --foreground: hsl(222.2, 84%, 4.9%);
+  --muted: hsl(210, 40%, 96%);
+  --muted-foreground: hsl(215.4, 16.3%, 46.9%);
+  --popover: hsl(0, 0%, 100%);
+  --popover-foreground: hsl(222.2, 84%, 4.9%);
+  --card: hsl(0, 0%, 100%);
+  --card-foreground: hsl(222.2, 84%, 4.9%);
+  --border: hsl(214.3, 31.8%, 91.4%);
+  --input: hsl(214.3, 31.8%, 91.4%);
+  --primary: hsl(200, 82%, 54%);
+  --primary-foreground: hsl(210, 40%, 98%);
+  --secondary: hsl(210, 40%, 96%);
+  --secondary-foreground: hsl(222.2, 84%, 4.9%);
+  --accent: hsl(210, 40%, 96%);
+  --accent-foreground: hsl(222.2, 84%, 4.9%);
+  --destructive: hsl(0, 84.2%, 60.2%);
+  --destructive-foreground: hsl(210, 40%, 98%);
+  --ring: hsl(222.2, 84%, 4.9%);
+  --radius: 0.5rem;
+
+  /* Custom colors for AFKBOT */
+  --primary-light: hsl(186, 91%, 55%);
+  --accent-purple: hsl(258, 89%, 66%);
+  --accent-light: hsl(251, 91%, 73%);
+}
+
+.dark {
+  --background: hsl(222.2, 84%, 4.9%);
+  --foreground: hsl(210, 40%, 98%);
+  --muted: hsl(217.2, 32.6%, 17.5%);
+  --muted-foreground: hsl(215, 20.2%, 65.1%);
+  --popover: hsl(222.2, 84%, 4.9%);
+  --popover-foreground: hsl(210, 40%, 98%);
+  --card: hsl(222.2, 84%, 4.9%);
+  --card-foreground: hsl(210, 40%, 98%);
+  --border: hsl(217.2, 32.6%, 17.5%);
+  --input: hsl(217.2, 32.6%, 17.5%);
+  --primary: hsl(200, 82%, 54%);
+  --primary-foreground: hsl(222.2, 84%, 4.9%);
+  --secondary: hsl(217.2, 32.6%, 17.5%);
+  --secondary-foreground: hsl(210, 40%, 98%);
+  --accent: hsl(217.2, 32.6%, 17.5%);
+  --accent-foreground: hsl(210, 40%, 98%);
+  --destructive: hsl(0, 62.8%, 30.6%);
+  --destructive-foreground: hsl(210, 40%, 98%);
+  --ring: hsl(212.7, 26.8%, 83.9%);
+
+  /* Dark theme custom colors */
+  --primary-light: hsl(186, 91%, 55%);
+  --accent-purple: hsl(258, 89%, 66%);
+  --accent-light: hsl(251, 91%, 73%);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer components {
+  .glassmorphism {
+    background: rgba(30, 41, 59, 0.8);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(8, 145, 178, 0.2);
+  }
+
+  .glassmorphism-light {
+    background: rgba(51, 65, 85, 0.6);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(8, 145, 178, 0.15);
+  }
+
+  .gradient-button {
+    background: linear-gradient(135deg, hsl(200, 82%, 54%), hsl(258, 89%, 66%));
+    transition: all 0.3s ease;
+  }
+
+  .gradient-button:hover {
+    background: linear-gradient(135deg, hsl(186, 91%, 55%), hsl(251, 91%, 73%));
+    transform: translateY(-1px);
+    box-shadow: 0 10px 25px rgba(8, 145, 178, 0.3);
+  }
+
+  .minecraft-avatar {
+    background: linear-gradient(45deg, hsl(258, 89%, 66%), hsl(200, 82%, 54%));
+    image-rendering: pixelated;
+  }
+
+  .status-online {
+    animation: glow 2s ease-in-out infinite alternate;
+  }
+
+  @keyframes glow {
+    0% { 
+      box-shadow: 0 0 5px hsl(200, 82%, 54%), 0 0 10px hsl(200, 82%, 54%), 0 0 15px hsl(200, 82%, 54%);
+    }
+    100% { 
+      box-shadow: 0 0 10px hsl(200, 82%, 54%), 0 0 20px hsl(200, 82%, 54%), 0 0 30px hsl(200, 82%, 54%);
+    }
+  }
+
+  .plan-badge-supreme {
+    background: linear-gradient(135deg, hsl(258, 89%, 66%), hsl(251, 91%, 73%));
+  }
+
+  .plan-badge-premium {
+    background: linear-gradient(135deg, hsl(200, 82%, 54%), hsl(186, 91%, 55%));
+  }
+
+  .plan-badge-standard {
+    background: linear-gradient(135deg, hsl(217.2, 32.6%, 17.5%), hsl(215, 20.2%, 65.1%));
+  }
+}
+
+=== NEON DATABASE CONFIG ===
+DATABASE_URL=postgresql://user:pass@host/db
+
+=== VERCEL.JSON ===
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "client/src/**/*",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist/public"
+      }
+    },
+    {
+      "src": "server/index.ts",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/server/index.ts"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/client/dist/public/$1"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  }
+}
